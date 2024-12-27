@@ -19,6 +19,7 @@ const createWindow = async () => {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
+    autoHideMenuBar: true, // disable menu bar
   });
 
   if (app.isPackaged) {

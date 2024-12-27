@@ -92,8 +92,12 @@ export default function Home() {
                 label: labelText,
               });
               drawBox.draw(canvas);
-
-              toast.success(`Đây là ${labelText}`);
+              console.log(labelText);
+              if (labelText.includes('unknown')) {
+                toast.error('Không thể nhận diện ra người này!');
+              } else {
+                toast.success(`Đây là ${labelText}`);
+              }
             }
           }
         }
