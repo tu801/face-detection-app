@@ -1,101 +1,142 @@
-import Image from "next/image";
+'use client';
+import { loadTrainingData } from '@/utils/training';
+import * as faceapi from 'face-api.js';
+import { useRef, useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import Loading from './loading';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(
+    null
+  );
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  const loadModels = async () => {
+    const MODEL_URL = '/models';
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]);
+    toast.success('Models loaded');
+
+    const trainingData = await loadTrainingData();
+    console.log(trainingData);
+    const faceMatcher = new faceapi.FaceMatcher(trainingData, 0.6);
+    setFaceMatcher(faceMatcher);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadModels();
+  }, []);
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageSrc(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  useEffect(() => {
+    const detectFaces = async () => {
+      if (imageSrc && imgRef.current && canvasRef.current) {
+        const img = imgRef.current;
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        if (context) {
+          // Đảm bảo canvas có cùng kích thước với ảnh
+          canvas.width = img.width;
+          canvas.height = img.height;
+
+          // Phát hiện gương mặt
+          // const detections = await faceapi
+          //   .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
+          //   .withFaceExpressions();
+          const detections = await faceapi
+            .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptors()
+            .withFaceExpressions();
+
+          // Xóa canvas trước khi vẽ
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Vẽ ảnh lên canvas
+          context.drawImage(img, 0, 0, img.width, img.height);
+
+          // Vẽ các khung nhận diện gương mặt lên canvas
+          const resizedDetections = faceapi.resizeResults(detections, {
+            width: img.width,
+            height: img.height,
+          });
+          // faceapi.draw.drawDetections(canvas, resizedDetections);
+          // faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+          for (const detection of resizedDetections) {
+            const box = detection.detection.box;
+            if (faceMatcher) {
+              const labelText = faceMatcher
+                .findBestMatch(detection.descriptor)
+                .toString();
+
+              const drawBox = new faceapi.draw.DrawBox(box, {
+                label: labelText,
+              });
+              drawBox.draw(canvas);
+
+              toast.success(`Đây là ${labelText}`);
+            }
+          }
+        }
+      }
+    };
+
+    detectFaces();
+  }, [imageSrc, faceMatcher]);
+
+  if (loading) {
+    return (
+      <div>
+        <Loading />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid items-center justify-items-center font-[family-name:var(--font-geist-sans)]">
+      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
+        <h1>Nhận diện JAV </h1>
+        <input type="file" accept="image/*" onChange={handleImageChange} />
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          {imageSrc && (
+            <img
+              ref={imgRef}
+              src={imageSrc}
+              alt="Selected"
+              style={{ maxWidth: '500px', display: 'block' }}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          )}
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+            }}
+          />
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
