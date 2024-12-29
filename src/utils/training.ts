@@ -1,6 +1,18 @@
 import * as faceapi from 'face-api.js';
 import toast from 'react-hot-toast';
 
+export async function loadTrainModels() {
+  const MODEL_URL = '/models';
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+  ]);
+  toast.success('Models loaded');
+}
+
 export async function loadTrainingData() {
   const labels = [
     'Fukada Eimi',
@@ -31,4 +43,15 @@ export async function loadTrainingData() {
   }
 
   return faceDescriptors;
+}
+
+export type TrainingData = { _label: string; _descriptors: number[][] };
+
+export function deserializeTrainingData(data: TrainingData[]) {
+  return data.map((item) => {
+    return new faceapi.LabeledFaceDescriptors(
+      item._label,
+      item._descriptors.map((d) => new Float32Array(d))
+    );
+  });
 }

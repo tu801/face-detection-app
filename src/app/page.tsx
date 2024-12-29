@@ -1,9 +1,15 @@
 'use client';
-import { loadTrainingData } from '@/utils/training';
+import {
+  loadTrainingData,
+  loadTrainModels,
+  deserializeTrainingData,
+} from '@/utils/training';
 import * as faceapi from 'face-api.js';
 import { useRef, useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Loading from './loading';
+import { openDB } from 'idb';
+import Image from 'next/image';
 
 export default function Home() {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -13,21 +19,27 @@ export default function Home() {
   const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(
     null
   );
+  const [imageHeight, setImageHeight] = useState<number | null>(null);
 
   const loadModels = async () => {
-    const MODEL_URL = '/models';
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]);
-    toast.success('Models loaded');
+    await loadTrainModels();
 
-    const trainingData = await loadTrainingData();
+    const db = await openDB('face-detection-db', 1, {
+      upgrade(db) {
+        db.createObjectStore('trainingData');
+      },
+    });
+
+    let trainingData = await db.get('trainingData', 'data');
+    if (!trainingData) {
+      trainingData = await loadTrainingData();
+      await db.put('trainingData', trainingData, 'data');
+    } else {
+      trainingData = deserializeTrainingData(trainingData);
+    }
+
     console.log(trainingData);
-    const faceMatcher = new faceapi.FaceMatcher(trainingData, 0.6);
+    const faceMatcher = new faceapi.FaceMatcher(trainingData, 0.5);
     setFaceMatcher(faceMatcher);
     setLoading(false);
   };
@@ -41,7 +53,13 @@ export default function Home() {
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        setImageSrc(reader.result as string);
+        const img = document.createElement('img') as HTMLImageElement;
+        img.src = reader.result as string;
+        img.onload = () => {
+          const aspectRatio = img.height / img.width;
+          setImageSrc(reader.result as string);
+          setImageHeight(500 * aspectRatio);
+        };
       };
       reader.readAsDataURL(file);
     }
@@ -59,9 +77,6 @@ export default function Home() {
           canvas.height = img.height;
 
           // Phát hiện gương mặt
-          // const detections = await faceapi
-          //   .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
-          //   .withFaceExpressions();
           const detections = await faceapi
             .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
             .withFaceLandmarks()
@@ -79,8 +94,7 @@ export default function Home() {
             width: img.width,
             height: img.height,
           });
-          // faceapi.draw.drawDetections(canvas, resizedDetections);
-          // faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+
           for (const detection of resizedDetections) {
             const box = detection.detection.box;
             if (faceMatcher) {
@@ -122,10 +136,12 @@ export default function Home() {
         <input type="file" accept="image/*" onChange={handleImageChange} />
         <div style={{ position: 'relative', display: 'inline-block' }}>
           {imageSrc && (
-            <img
+            <Image
               ref={imgRef}
               src={imageSrc}
               alt="Selected"
+              width={500}
+              height={imageHeight || '700'}
               style={{ maxWidth: '500px', display: 'block' }}
             />
           )}

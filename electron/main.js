@@ -15,7 +15,7 @@ const appServe = app.isPackaged
 const createWindow = async () => {
   const win = new BrowserWindow({
     width: 1024,
-    height: 800,
+    height: 900,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
